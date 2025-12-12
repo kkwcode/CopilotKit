@@ -16,7 +16,7 @@ const packageMappings = {
 };
 
 const packagesDir = path.join(__dirname, 'CopilotKit/packages');
-const targetVersion = '1.9.1-patch.1';
+const targetVersion = '1.9.1-patch.5';
 
 console.log(`🚀 开始发布 CopilotKit 包到 @tencent 命名空间 (版本: ${targetVersion})...`);
 

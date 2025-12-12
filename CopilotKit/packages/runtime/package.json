@@ -4,7 +4,7 @@
   "homepage": "https://github.com/CopilotKit/CopilotKit",
   "repository": {
     "type": "git",
-    "url": "https://github.com/CopilotKit/CopilotKit.git"
+    "url": "git+https://github.com/CopilotKit/CopilotKit.git"
   },
   "publishConfig": {
     "access": "public"
