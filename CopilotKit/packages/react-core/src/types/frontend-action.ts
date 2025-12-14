@@ -11,36 +11,42 @@ interface InProgressState<T extends Parameter[] | [] = []> {
   status: "inProgress";
   args: Partial<MappedParameterTypes<T>>;
   result: undefined;
+  actionExecutionId: string;
 }
 
 interface ExecutingState<T extends Parameter[] | [] = []> {
   status: "executing";
   args: MappedParameterTypes<T>;
   result: undefined;
+  actionExecutionId: string;
 }
 
 interface CompleteState<T extends Parameter[] | [] = []> {
   status: "complete";
   args: MappedParameterTypes<T>;
   result: any;
+  actionExecutionId: string;
 }
 
 interface InProgressStateNoArgs<T extends Parameter[] | [] = []> {
   status: "inProgress";
   args: Partial<MappedParameterTypes<T>>;
   result: undefined;
+  actionExecutionId: string;
 }
 
 interface ExecutingStateNoArgs<T extends Parameter[] | [] = []> {
   status: "executing";
   args: MappedParameterTypes<T>;
   result: undefined;
+  actionExecutionId: string;
 }
 
 interface CompleteStateNoArgs<T extends Parameter[] | [] = []> {
   status: "complete";
   args: MappedParameterTypes<T>;
   result: any;
+  actionExecutionId: string;
 }
 
 interface InProgressStateWait<T extends Parameter[] | [] = []> {
@@ -50,6 +56,7 @@ interface InProgressStateWait<T extends Parameter[] | [] = []> {
   handler: undefined;
   respond: undefined;
   result: undefined;
+  actionExecutionId: string;
 }
 
 interface ExecutingStateWait<T extends Parameter[] | [] = []> {
@@ -59,6 +66,7 @@ interface ExecutingStateWait<T extends Parameter[] | [] = []> {
   handler: (result: any) => void;
   respond: (result: any) => void;
   result: undefined;
+  actionExecutionId: string;
 }
 
 interface CompleteStateWait<T extends Parameter[] | [] = []> {
@@ -68,6 +76,7 @@ interface CompleteStateWait<T extends Parameter[] | [] = []> {
   handler: undefined;
   respond: undefined;
   result: any;
+  actionExecutionId: string;
 }
 
 interface InProgressStateNoArgsWait<T extends Parameter[] | [] = []> {
@@ -77,6 +86,7 @@ interface InProgressStateNoArgsWait<T extends Parameter[] | [] = []> {
   handler: undefined;
   respond: undefined;
   result: undefined;
+  actionExecutionId: string;
 }
 
 interface ExecutingStateNoArgsWait<T extends Parameter[] | [] = []> {
@@ -86,6 +96,7 @@ interface ExecutingStateNoArgsWait<T extends Parameter[] | [] = []> {
   handler: (result: any) => void;
   respond: (result: any) => void;
   result: undefined;
+  actionExecutionId: string;
 }
 
 interface CompleteStateNoArgsWait<T extends Parameter[] | [] = []> {
@@ -94,6 +105,7 @@ interface CompleteStateNoArgsWait<T extends Parameter[] | [] = []> {
   /** @deprecated use respond instead */
   handler: undefined;
   respond: undefined;
+  actionExecutionId: string;
 }
 
 export type ActionRenderProps<T extends Parameter[] | [] = []> =
@@ -119,12 +131,15 @@ export type ActionRenderPropsNoArgsWait<T extends Parameter[] | [] = []> =
 export type CatchAllActionRenderProps<T extends Parameter[] | [] = []> =
   | (CompleteState<T> & {
       name: string;
+      actionExecutionId: string;
     })
   | (ExecutingState<T> & {
       name: string;
+      actionExecutionId: string;
     })
   | (InProgressState<T> & {
       name: string;
+      actionExecutionId: string;
     });
 
 export type FrontendActionAvailability = "disabled" | "enabled" | "remote" | "frontend";

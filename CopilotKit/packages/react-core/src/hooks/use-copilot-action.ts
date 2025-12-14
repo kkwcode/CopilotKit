@@ -205,6 +205,7 @@ export function useCopilotAction<const T extends Parameter[] | [] = []>(
         result: props.result,
         handler: status === "executing" ? renderAndWaitRef.current!.resolve : undefined,
         respond: status === "executing" ? renderAndWaitRef.current!.resolve : undefined,
+        actionExecutionId: props.actionExecutionId,
       } as T extends [] ? ActionRenderPropsNoArgsWait<T> : ActionRenderPropsWait<T>;
 
       // Type guard to check if renderAndWait is for no args case
