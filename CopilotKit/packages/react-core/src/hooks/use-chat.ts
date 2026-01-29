@@ -14,6 +14,7 @@ import {
   filterAdjacentAgentStateMessages,
   filterAgentStateMessages,
   convertGqlOutputToMessages,
+  cleanupMessageCache,
   MessageStatusCode,
   MessageRole,
   Role,
@@ -544,6 +545,16 @@ export function useChat(options: UseChatOptions): UseChatHelpers {
           if (newMessages.length > 0) {
             // Update message state
             setMessages([...previousMessages, ...newMessages]);
+            
+            // 清理已完成消息的缓存，释放内存
+            newMessages.forEach((msg) => {
+              if (
+                msg.isActionExecutionMessage() &&
+                msg.status.code === MessageStatusCode.Success
+              ) {
+                cleanupMessageCache(msg.id);
+              }
+            });
           }
         }
         let finalMessages = constructFinalMessages(

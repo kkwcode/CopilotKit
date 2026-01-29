@@ -87,9 +87,37 @@ export class ActionExecutionMessage
   name: ActionExecutionMessageInput["name"];
   arguments: Record<string, any>;
   parentMessageId: ActionExecutionMessageInput["parentMessageId"];
+  private _argumentsString: string = ""; // StringBuilder: 累积的字符串
+  
   constructor(props: ActionExecutionMessageConstructorOptions) {
     super(props);
     this.type = "ActionExecutionMessage";
+  }
+
+  /**
+   * StringBuilder模式：追加新的字符串片段，避免重复拼接
+   * 这个方法用于流式传输时增量更新arguments
+   */
+  appendArguments(chunks: string[]): void {
+    if (!chunks || chunks.length === 0) return;
+    
+    // 只追加新内容，不重新拼接所有历史字符串
+    this._argumentsString += chunks.join("");
+    
+    // 尝试解析JSON
+    try {
+      const untruncateJson = require("untruncate-json");
+      const parsed = JSON.parse(untruncateJson(this._argumentsString));
+      this.arguments = parsed;
+    } catch (e) {
+      // JSON还不完整，保持之前的值或空对象
+      if (!this.arguments) {
+        this.arguments = {};
+      }
+    }
+    
+    // 更新时间戳以触发React重渲染
+    this.createdAt = new Date();
   }
 }
 

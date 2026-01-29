@@ -15,6 +15,13 @@ import {
 import untruncateJson from "untruncate-json";
 import { parseJson } from "@copilotkit/shared";
 
+// 用于追踪每个消息已处理的chunks数量，避免重复拼接
+const processedChunksCount = new Map<string, number>();
+// 用于累积每个消息的arguments字符串
+const argsAccumulator = new Map<string, string>();
+// 用于缓存已创建的消息对象，避免重复创建
+const messageObjectCache = new Map<string, Message>();
+
 export function filterAgentStateMessages(messages: Message[]): Message[] {
   return messages.filter((message) => !message.isAgentStateMessage());
 }
@@ -113,8 +120,20 @@ export function convertGqlOutputToMessages(
   messages: GenerateCopilotResponseMutation["generateCopilotResponse"]["messages"],
 ): Message[] {
   return messages.map((message) => {
+    const msgId = message.id;
+    
+    // 尝试从缓存获取已存在的消息对象
+    const cachedMessage = messageObjectCache.get(msgId);
+    
     if (message.__typename === "TextMessageOutput") {
-      return new TextMessage({
+      if (cachedMessage && cachedMessage.isTextMessage()) {
+        // 复用对象，只更新内容
+        cachedMessage.content = message.content.join("");
+        cachedMessage.status = message.status || { code: MessageStatusCode.Pending };
+        return cachedMessage;
+      }
+      
+      const newMessage = new TextMessage({
         id: message.id,
         role: message.role,
         content: message.content.join(""),
@@ -122,17 +141,33 @@ export function convertGqlOutputToMessages(
         createdAt: new Date(),
         status: message.status || { code: MessageStatusCode.Pending },
       });
+      messageObjectCache.set(msgId, newMessage);
+      return newMessage;
     } else if (message.__typename === "ActionExecutionMessageOutput") {
-      return new ActionExecutionMessage({
+      if (cachedMessage && cachedMessage.isActionExecutionMessage()) {
+        // 复用对象，只更新 arguments（使用优化的增量解析）
+        cachedMessage.arguments = getPartialArgumentsOptimized(message.arguments, message.id);
+        cachedMessage.status = message.status || { code: MessageStatusCode.Pending };
+        return cachedMessage;
+      }
+      
+      const newMessage = new ActionExecutionMessage({
         id: message.id,
         name: message.name,
-        arguments: getPartialArguments(message.arguments),
+        arguments: getPartialArgumentsOptimized(message.arguments, message.id),
         parentMessageId: message.parentMessageId,
         createdAt: new Date(),
         status: message.status || { code: MessageStatusCode.Pending },
       });
+      messageObjectCache.set(msgId, newMessage);
+      return newMessage;
     } else if (message.__typename === "ResultMessageOutput") {
-      return new ResultMessage({
+      // ResultMessage 通常不会流式更新，但也缓存以保持一致性
+      if (cachedMessage && cachedMessage.isResultMessage()) {
+        return cachedMessage;
+      }
+      
+      const newMessage = new ResultMessage({
         id: message.id,
         result: message.result,
         actionExecutionId: message.actionExecutionId,
@@ -140,8 +175,25 @@ export function convertGqlOutputToMessages(
         createdAt: new Date(),
         status: message.status || { code: MessageStatusCode.Pending },
       });
+      messageObjectCache.set(msgId, newMessage);
+      return newMessage;
     } else if (message.__typename === "AgentStateMessageOutput") {
-      return new AgentStateMessage({
+      // AgentStateMessage 可能会更新
+      if (cachedMessage && cachedMessage.isAgentStateMessage()) {
+        Object.assign(cachedMessage, {
+          threadId: message.threadId,
+          role: message.role,
+          agentName: message.agentName,
+          nodeName: message.nodeName,
+          runId: message.runId,
+          active: message.active,
+          running: message.running,
+          state: parseJson(message.state, {}),
+        });
+        return cachedMessage;
+      }
+      
+      const newMessage = new AgentStateMessage({
         id: message.id,
         threadId: message.threadId,
         role: message.role,
@@ -153,8 +205,15 @@ export function convertGqlOutputToMessages(
         state: parseJson(message.state, {}),
         createdAt: new Date(),
       });
+      messageObjectCache.set(msgId, newMessage);
+      return newMessage;
     } else if (message.__typename === "ImageMessageOutput") {
-      return new ImageMessage({
+      // ImageMessage 通常不会流式更新
+      if (cachedMessage && cachedMessage.isImageMessage()) {
+        return cachedMessage;
+      }
+      
+      const newMessage = new ImageMessage({
         id: message.id,
         format: message.format,
         bytes: message.bytes,
@@ -163,6 +222,8 @@ export function convertGqlOutputToMessages(
         createdAt: new Date(),
         status: message.status || { code: MessageStatusCode.Pending },
       });
+      messageObjectCache.set(msgId, newMessage);
+      return newMessage;
     }
 
     throw new Error("Unknown message type");
@@ -237,6 +298,66 @@ export function loadMessagesFromJsonRepresentation(json: any[]): Message[] {
   return result;
 }
 
+/**
+ * 优化版本：增量处理arguments，避免每次重复拼接所有chunks
+ * 
+ * @param args - GraphQL @stream 返回的累积字符串数组
+ * @param messageId - 消息ID，用于追踪处理进度
+ * @returns 解析后的arguments对象
+ */
+function getPartialArgumentsOptimized(args: string[], messageId: string) {
+  try {
+    if (!args.length) return {};
+    
+    // 获取已处理的chunks数量
+    const prevCount = processedChunksCount.get(messageId) || 0;
+    
+    // 只处理新增的chunks
+    const newChunks = args.slice(prevCount);
+    
+    if (newChunks.length === 0) {
+      // 没有新数据，返回已缓存的结果
+      const cached = argsAccumulator.get(messageId);
+      if (cached) {
+        try {
+          return JSON.parse(untruncateJson(cached));
+        } catch (e) {
+          return {};
+        }
+      }
+      return {};
+    }
+    
+    // 更新已处理的chunks数量
+    processedChunksCount.set(messageId, args.length);
+    
+    // 只拼接新增的chunks（而不是重新拼接所有历史chunks）
+    const incrementalString = newChunks.join("");
+    
+    // 累积到总字符串
+    const accumulated = (argsAccumulator.get(messageId) || "") + incrementalString;
+    argsAccumulator.set(messageId, accumulated);
+    
+    // 尝试解析JSON
+    return JSON.parse(untruncateJson(accumulated));
+  } catch (e) {
+    return {};
+  }
+}
+
+/**
+ * 清理已完成消息的缓存，避免内存泄漏
+ */
+export function cleanupMessageCache(messageId: string) {
+  processedChunksCount.delete(messageId);
+  argsAccumulator.delete(messageId);
+  messageObjectCache.delete(messageId);
+}
+
+/**
+ * 原始版本：保留用于兼容性
+ * @deprecated 使用 getPartialArgumentsOptimized 替代
+ */
 function getPartialArguments(args: string[]) {
   try {
     if (!args.length) return {};
