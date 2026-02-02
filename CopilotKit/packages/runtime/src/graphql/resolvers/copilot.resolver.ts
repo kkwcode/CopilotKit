@@ -546,16 +546,36 @@ export class CopilotResolver {
                     logger.debug("Action execution argument stream created");
 
                     const argumentChunks: string[] = [];
+                    let lastPushedLength = 0;
+                    let pushTimer: NodeJS.Timeout | null = null;
+                    const PUSH_INTERVAL_MS = 200; // 每200ms推送一次
                     let actionExecutionArgumentSubscription: Subscription;
+
+                    // 定时推送函数
+                    const scheduledPush = async () => {
+                      const currentContent = argumentChunks.join("");
+                      if (currentContent.length > lastPushedLength) {
+                        const newContent = currentContent.substring(lastPushedLength);
+                        console.log("Pushing scheduled chunk:", { 
+                          newContentLength: newContent.length,
+                          totalLength: currentContent.length
+                        });
+                        await pushArgumentsChunk(newContent);
+                        lastPushedLength = currentContent.length;
+                      }
+                    };
+
+                    // 启动定时器
+                    pushTimer = setInterval(scheduledPush, PUSH_INTERVAL_MS);
 
                     actionExecutionArgumentSubscription = actionExecutionArgumentStream.subscribe({
                       next: async (e: RuntimeEvent) => {
                         if (e.type == RuntimeEventTypes.ActionExecutionArgs) {
-                          await pushArgumentsChunk(e.args);
                           argumentChunks.push(e.args);
                         }
                       },
                       error: (err) => {
+                        if (pushTimer) clearInterval(pushTimer);
                         logger.error({ err }, "Error in action execution argument stream");
                         streamingArgumentsStatus.next(
                           plainToInstance(FailedMessageStatus, {
@@ -566,8 +586,14 @@ export class CopilotResolver {
                         stopStreamingArguments();
                         actionExecutionArgumentSubscription?.unsubscribe();
                       },
-                      complete: () => {
+                      complete: async () => {
                         logger.debug("Action execution argument stream completed");
+                        // 停止定时器并推送最后的数据
+                        if (pushTimer) {
+                          clearInterval(pushTimer);
+                          pushTimer = null;
+                        }
+                        await scheduledPush();
                         streamingArgumentsStatus.next(new SuccessMessageStatus());
                         stopStreamingArguments();
                         actionExecutionArgumentSubscription?.unsubscribe();
